@@ -1,0 +1,24 @@
+include "variational_test_RK.edp"
+
+func real computelambda() {
+  real lambda = 0.0;
+
+  Qh vel = sqrt(uxint^2+uyint^2)+sqrt(abs(gamma*pint/rhoint));
+  lambda = vel[].max;
+
+  return lambda;
+
+}
+
+//
+// Variational form for jump indicator
+//
+varf etaK(rho,chiK) = intalledges(Th)(((square(jump(rhoint)))/(hTriangle*(area^(3/4))))*chiK);
+//
+real ximin = 0.5;
+real ximax = 1.5;
+real diff = ximax-ximin;
+//
+//
+// Variational form for minimum area copmutation
+varf varea(unused,chiK) = int2d(Th)(chiK);

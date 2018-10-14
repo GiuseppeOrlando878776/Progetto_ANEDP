@@ -1,0 +1,200 @@
+include "compute_lambda_test_RK.edp"
+
+// Plot computational mesh
+plot(Th,wait = 1);
+
+// Parameters
+real h,t,minarea,dt;
+real tfin = 0.5;
+int nmax = 10000;
+int it = 0;
+real tol = 1e-4;
+
+real errCL,errCD;
+real[int] vecCL(nmax);
+real[int] vecCD(nmax);
+//
+//  Field initialization
+//
+rho = rhoinf;
+[rhoux,rhouy] = [rhouxinf,rhouyinf];
+rhoE = rhoEinf;
+
+func int RKstep() {
+  // Check time-step size
+  if(t+dt>tfin)
+    dt = tfin-t;
+
+  // Save previous step
+  Qh rhoold,rhoEold;
+  Vh [rhouxold,rhouyold];
+
+  rhoold = rho;
+  [rhouxold,rhouyold] = [rhoux,rhouy];
+  rhoEold = rhoE;
+  // Runge-Kutta advance in time
+  rhoint = rhoold;
+  [rhouxint,rhouyint] = [rhouxold,rhouyold];
+  rhoEint = rhoEold;
+  [uxint,uyint] = [rhouxint/rhoint,rhouyint/rhoint];
+  pint = gammam1*(rhoEint-0.5*rhoint*(uxint^2+uyint^2));
+  // Compute lambda, shock capturing term,rhs and update fields
+  lambda = computelambda();
+  Mh gK;
+  gK[] = etaK(0,Mh);
+  discretegK = 0.0*(gK<ximin) + (0.5*sin(pi*(gK-diff)/(2*diff))+0.5)*(gK>=ximin)*(gK<ximax) + 1.0*(gK>=ximax);
+  cout<<"\nThe current value of lambda is "<<lambda<<endl;
+  eqmass;
+  eqmomentum;
+  eqenergy;
+  rhoint = rhoold + dt*rho;
+  [rhouxint,rhouyint] = [rhouxold,rhouyold] + dt*[rhoux,rhouy];
+  rhoEint = rhoEold + dt*rhoE;
+  // Compute lambda, shock capturing term,rhs and update fields
+  [uxint,uyint] = [rhouxint/rhoint,rhouyint/rhoint];
+  pint = gammam1*(rhoEint-0.5*rhoint*(uxint^2+uyint^2));
+  lambda = computelambda();
+  gK[] = etaK(0,Mh);
+  discretegK = 0.0*(gK<ximin) + (0.5*sin(pi*(gK-diff)/(2*diff))+0.5)*(gK>=ximin)*(gK<ximax) + 1.0*(gK>=ximax);
+  cout<<"\nThe current value of lambda is "<<lambda<<endl;
+  eqmass;
+  eqmomentum;
+  eqenergy;
+  rho = 0.5*(dt*rho + rhoold + rhoint);
+  [rhoux,rhouy] = 0.5*(dt*[rhoux,rhouy] + [rhouxold,rhouyold] + [rhouxint,rhouyint]);
+  rhoE = 0.5*(dt*rhoE + rhoEold + rhoEint);
+  // Compute time-step for next step
+  dt = (0.15*h/lambda);
+  // dt = 0.15/(h*lambda/minarea);
+
+  return 0;
+}
+//
+// Useful quantities
+//
+Qh ux,uy,p;
+real[int] tvec(nmax);
+//
+// Compute first time-step
+//
+rhoint = rho;
+[rhouxint,rhouyint] = [rhoux,rhouy];
+rhoEint = rhoE;
+[uxint,uyint] = [rhouxint/rhoint,rhouyint/rhoint];
+pint = gammam1*(rhoEint-0.5*rhoint*(uxint^2+uyint^2));
+lambda = computelambda();
+cout<<"The first value of lambda is "<<lambda<<endl;
+
+hK = hTriangle;
+h = hK[].min;
+
+Mh areaK;
+areaK[]= varea(0,Mh);
+minarea = areaK[].min;
+
+//dt = 0.1/(h*lambda/minarea);
+dt = 0.015*h/lambda;
+cout<<"The first step-size is "<<dt<<endl;
+//
+// Initialize aerodynamic coefficients
+//
+vecCD[0] = int1d(Th,5)(pint*N.x)/(la*rhoinf*uinf^2);
+vecCL[0] = int1d(Th,5)(pint*N.y)/(la*rhoinf*uinf^2);
+//
+// Ask if want to save
+//
+/*
+string res;
+cout<<"Type 'y' or 'Y' if you want to save data, type another key otherwise"<<endl;
+cin>>res;
+*/
+//
+// Time-Loop
+//
+for(t=dt;t<tfin && it<nmax;t+=dt) {
+
+  RKstep();
+
+  ux = rhoux/rho;
+  uy = rhouy/rho;
+  p = gammam1*(rhoE-0.5*rho*(ux^2+uy^2));
+
+  tvec[it] = dt;
+  it++;
+  //
+  // Save result if wanted
+  //
+  /*
+  if (res=="y" || res=="Y") {
+
+  {
+    string fname = "./rho/rho-"+it+".bb";
+    ofstream file(fname);
+    file << "2 1 1 "<< rho[].n << " 2 \n";
+    for (int j=0;j<rho[].n ; j++)
+     file << rho[][j] << endl;
+  }
+
+  {
+    string fname = "./velocity/ux-"+it+".bb";
+    ofstream file(fname);
+    file << "2 1 1 "<< ux[].n << " 2 \n";
+    for (int j=0;j<ux[].n ; j++)
+     file << ux[][j] << endl;
+  }
+
+  {
+    string fname = "./velocity/uy-"+it+".bb";
+    ofstream file(fname);
+    file << "2 1 1 "<< uy[].n << " 2 \n";
+    for (int j=0;j<uy[].n ; j++)
+     file << uy[][j] << endl;
+  }
+
+  {
+    string fname = "./time/tvec.bb";
+    ofstream file(fname);
+    file << "2 1 1 "<< tvec.n << " 2 \n";
+    for (int j=0;j<tvec.n ; j++)
+     file << tvec[j] << endl;
+  }
+
+  }
+  */
+
+
+  plot(ux,fill=1,value=1,wait=0,hsv=colormapHSVjet);
+  //savevtk("./rho-EE/rho-" + it + ".vtk", Th, rho, dataname="rho");
+
+  //
+  // Check convergence criterion
+  //
+  vecCL[it] = int1d(Th,5)(p*N.y)/(la*rhoinf*uinf^2);
+  vecCD[it] = int1d(Th,5)(p*N.x)/(la*rhoinf*uinf^2);
+  real[int] currCL = vecCL(floor(0.95*it):it);
+  real[int] currCD = vecCD(floor(0.95*it):it);
+  errCL = abs(currCL.max-currCL.min);
+  errCD = abs(currCD.max-currCD.min);
+  cout<<"The current error on lift coefficient is "<<errCL<<endl;
+  cout<<"The current error on drag coefficient is "<<errCD<<endl;
+  cout<<"We are at time "<<t<<" s"<<" and we just finished iteration "<<it<<endl;
+
+  /*
+  cout<<"The current value of lift coefficient is "<<vecCL[it]<<endl;
+  cout<<"The current value of drag coefficient is "<<vecCD[it]<<endl;
+  ofstream f("coefficients.txt");
+  f<<"Lift: "<<vecCL[it]<<endl;
+  f<<"Drag: "<<vecCD[it]<<endl;
+  */
+
+  if(it>400 && errCD<tol && errCL<tol)
+      break;
+
+}
+
+//
+//  Terminate.
+//
+cout << "\n";
+cout << "SHOCK:\n";
+cout << "  Normal end of execution.\n";

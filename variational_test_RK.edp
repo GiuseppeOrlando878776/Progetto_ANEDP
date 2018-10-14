@@ -1,0 +1,133 @@
+include "mesh.edp"
+include "parameters.edp"
+
+//
+//  Useful macros
+//
+macro Grad(f) [dx(f),dy(f)] //
+macro minus(f) (mean(f)-(jump(f)/2)) //
+macro plus(f) (mean(f)+(jump(f)/2)) //
+//
+//  Define the finite element spaces.
+//
+fespace Vh(Th,[P0,P0]);
+fespace Qh(Th,P0);
+
+fespace Mh(Th,P0);
+//
+//  Define trial functions and intermediate step solution.
+//
+Vh [rhoux,rhouy];
+Qh rho,rhoE;
+
+Vh [rhouxint,rhouyint],[uxint,uyint];
+Qh rhoint,rhoEint,pint;
+//
+//  Define test functions.
+//
+Vh [wx,wy];
+Qh v,q;
+//
+// Terms for max speed and shock capturing
+//
+real lambda;
+Mh discretegK,hK;
+real dtm1;
+//
+//  Variational forms for Euler equations with shock capturing term
+//
+problem eqmass(rho,v) = int2d(Th)(rho*v)
+
+                      - int2d(Th)([rhouxint,rhouyint]'*Grad(v))
+                      // Numerical flux
+                      + intalledges(Th)((nTonEdge-1)*(mean(rhouxint)*N.x+mean(rhouyint)*N.y)*v)
+                      + intalledges(Th)((1-nTonEdge)*0.5*lambda*jump(rhoint)*v)
+                      // Shock capturing
+                      + int2d(Th)(hTriangle*discretegK*(Grad(rhoint)'*Grad(v)))
+                      + intalledges(Th)((nTonEdge-1)*(mean(discretegK)*jump(rhoint))*jump(v)/nTonEdge)
+                      // Outflow condition
+                      + int1d(Th,3)((alpha>0.0)*(rhouxint*N.x+rhouyint*N.y)*v)
+
+                      + int1d(Th,2)((rhouxint*N.x+rhouyint*N.y)*v)
+                      // Inflow condition
+                      + int1d(Th,1) ((alpha>0.0)*(0.5*((rhouxint+rhouxinf)*N.x+(rhouyint+rhouyinf)*N.y))*v)
+                      + int1d(Th,1) ((alpha>0.0)*0.5*lambda*(rhoint-rhoinf)*v)
+
+                      + int1d(Th,4) ((0.5*((rhouxint+rhouxinf)*N.x+(rhouyint+rhouyinf)*N.y))*v)
+                      + int1d(Th,4) (0.5*lambda*(rhoint-rhoinf)*v);
+
+
+problem eqmomentum([rhoux,rhouy],[wx,wy]) = int2d(Th)([rhoux,rhouy]'*[wx,wy])
+
+                                          - int2d(Th)([rhoint*uxint^2+pint,rhoint*uxint*uyint]'*Grad(wx))
+                                          - int2d(Th)([rhoint*uxint*uyint,rhoint*uyint^2+pint]'*Grad(wy))
+                                          // Numerical flux
+                                          + intalledges(Th)((nTonEdge-1)*(mean(rhoint*uxint^2+pint)*N.x+
+                                                             mean(rhoint*uxint*uyint)*N.y)*wx)
+                                          + intalledges(Th)((1-nTonEdge)*0.5*lambda*jump(rhouxint)*wx)
+                                          + intalledges(Th)((nTonEdge-1)*(mean(rhoint*uxint*uyint)*N.x+
+                                                             mean(rhoint*uyint^2+pint)*N.y)*wy)
+                                          + intalledges(Th)((1-nTonEdge)*0.5*lambda*jump(rhouyint)*wy)
+                                          // Shock capturing
+                                          + int2d(Th) (hTriangle*discretegK*(Grad(rhouxint)'*Grad(wx)))
+                                          + intalledges(Th) ((nTonEdge-1)*(mean(discretegK)*
+                                                              jump(rhouxint))*jump(wx)/nTonEdge)
+                                          + int2d(Th) (hTriangle*discretegK*(Grad(rhouyint)'*Grad(wy)))
+                                          + intalledges(Th) ((nTonEdge-1)*(mean(discretegK)*
+                                                              jump(rhouyint))*jump(wy)/nTonEdge)
+                                          // Inflow condition
+                                          + int1d(Th,1)((alpha>0.0)*
+                                                        (0.5*(((rhoint*uxint^2+pint)+(rhoinf*uxinf^2+pinf))*N.x +
+                                                              ((rhoint*uxint*uyint)+(rhoinf*uxinf*uyinf))*N.y))*wx)
+                                          + int1d(Th,1)((alpha>0.0)*0.5*lambda*(rhouxint-rhouxinf)*wx)
+                                          + int1d(Th,1)((alpha>0.0)*
+                                                        (0.5*(((rhoint*uxint*uyint)+(rhoinf*uxinf*uyinf))*N.x +
+                                                             ((rhoint*uyint^2+pint)+(rhoinf*uyinf^2+pinf))*N.y))*wy)
+                                          + int1d(Th,1)((alpha>0.0)*0.5*lambda*(rhouyint-rhouyinf)*wy)
+
+                                          + int1d(Th,4)((0.5*(((rhoint*uxint^2+pint)+(rhoinf*uxinf^2+pinf))*N.x +
+                                                             ((rhoint*uxint*uyint)+(rhoinf*uxinf*uyinf))*N.y))*wx)
+                                          + int1d(Th,4)(0.5*lambda*(rhouxint-rhouxinf)*wx)
+                                          + int1d(Th,4)((0.5*(((rhoint*uxint*uyint)+(rhoinf*uxinf*uyinf))*N.x +
+                                                             ((rhoint*uyint^2+pint)+(rhoinf*uyinf^2+pinf))*N.y))*wy)
+                                          + int1d(Th,4)(0.5*lambda*(rhouyint-rhouyinf)*wy)
+                                           // Outflow condition
+                                          + int1d(Th,3)((alpha>0.0)*((rhoint*uxint^2+pint)*N.x +
+                                                                    (rhoint*uxint*uyint)*N.y)*wx)
+                                          + int1d(Th,3)((alpha>0.0)*((rhoint*uxint*uyint)*N.x +
+                                                                    (rhoint*uyint^2+pint)*N.y)*wy)
+
+                                          + int1d(Th,2)(((rhoint*uxint^2+pint)*N.x +
+                                                         (rhoint*uxint*uyint)*N.y)*wx)
+                                          + int1d(Th,2)(((rhoint*uxint*uyint)*N.x +
+                                                         (rhoint*uyint^2+pint)*N.y)*wy)
+                                          // Wall condition
+                                          + int1d(Th,1)((alpha==0.0)*(pint*N.x)*wx)
+                                          + int1d(Th,1)((alpha==0.0)*(pint*N.y)*wy)
+                                          + int1d(Th,3)((alpha==0.0)*(pint*N.x)*wx)
+                                          + int1d(Th,3)((alpha==0.0)*(pint*N.y)*wy)
+                                          + int1d(Th,5)((pint*N.x)*wx)
+                                          + int1d(Th,5)((pint*N.y)*wy);
+
+
+problem eqenergy(rhoE,q) = int2d(Th)(rhoE*q)
+
+                         - int2d(Th)([(rhoEint+pint)*uxint,(rhoEint+pint)*uyint]'*Grad(q))
+                         // Numerical flux
+                         + intalledges(Th)((nTonEdge-1)*(mean((rhoEint+pint)*uxint)*N.x+
+                                           mean((rhoEint+pint)*uyint)*N.y)*q)
+                         + intalledges(Th)((1-nTonEdge)*0.5*lambda*jump(rhoEint)*q)
+                         // Shock capturing
+                         + int2d(Th)(hTriangle*discretegK*(Grad(rhoEint)'*Grad(q)))
+                         + intalledges(Th)((nTonEdge-1)*(mean(discretegK)*jump(rhoEint))*jump(q)/nTonEdge)
+                         // Outflow condition
+                         + int1d(Th,3)((alpha>0.0)*(((rhoEint+pint)*uxint)*N.x+((rhoEint+pint)*uyint)*N.y)*q)
+                         + int1d(Th,2)((((rhoEint+pint)*uxint)*N.x+((rhoEint+pint)*uyint)*N.y)*q)
+                         // Inflow condition
+                         + int1d(Th,1)((alpha>0.0)*(0.5*(((rhoEint+pint)*uxint+(rhoEinf+pinf)*uxinf)*N.x +
+                                                        ((rhoEint+pint)*uyint+(rhoEinf+pinf)*uyinf)*N.y))*q)
+                         + int1d(Th,1)((alpha>0.0)*0.5*lambda*(rhoEint-rhoEinf)*q)
+
+                         + int1d(Th,4)((0.5*(((rhoEint+pint)*uxint+(rhoEinf+pinf)*uxinf)*N.x +
+                                            ((rhoEint+pint)*uyint+(rhoEinf+pinf)*uyinf)*N.y))*q)
+                         + int1d(Th,4)(0.5*lambda*(rhoEint-rhoEinf)*q);
